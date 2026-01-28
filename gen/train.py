@@ -19,8 +19,8 @@ class ImageFolder(Dataset):
         return len(self.paths)
 
     def __getitem__(self, i):
-        img = Image.open(self.paths[i]).convert("RGB")
-        return self.t(img) * 2 - 1  # [-1,1]
+        img = Image.open(self.paths[i]).convert("L")  # <-- grayscale
+        return self.t(img) * 2 - 1  # [-1,1], shape now [1, H, W]
 
 # -----------------------
 # Generator
@@ -37,7 +37,7 @@ class Generator(nn.Module):
                 nn.LeakyReLU(0.2)
             ) for _ in range(8)],
 
-            nn.Conv2d(base, 3, 1),
+            nn.Conv2d(base, 1, 1),  # <-- grayscale output
             nn.Tanh()
         )
 
@@ -51,8 +51,8 @@ class Discriminator(nn.Module):
     def __init__(self, base=64):
         super().__init__()
         layers = []
-        c = 3
-        for i in range(5):
+        c = 1  # <-- grayscale input
+        for i in range(6):
             layers += [
                 nn.Conv2d(c, base * (2**i), 4, 2, 1),
                 nn.LeakyReLU(0.2)
@@ -67,7 +67,7 @@ class Discriminator(nn.Module):
 # -----------------------
 # Utilities
 # -----------------------
-def crop_patch(img, size=384):
+def crop_patch(img, size=512):
     _, H, W = img.shape
     y = random.randint(0, H - size)
     x = random.randint(0, W - size)
@@ -88,8 +88,8 @@ data = DataLoader(ImageFolder("data"), batch_size=1, shuffle=True)
 G = Generator().cuda()
 D = Discriminator().cuda()
 
-optG = torch.optim.Adam(G.parameters(), lr=2e-4, betas=(0, 0.99))
-optD = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0, 0.99))
+optG = torch.optim.Adam(G.parameters(), lr=2e-4, betas=(0.0, 0.99))
+optD = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0.0, 0.99))
 
 for epoch in range(200):
     for real in tqdm(data):
@@ -124,4 +124,6 @@ for epoch in range(200):
     # save samples
     if epoch % 10 == 0:
         out = (fake.clamp(-1,1)+1)/2
-        transforms.ToPILImage()(out[0].cpu()).save(f"sample_{epoch}.png")
+        img = out[0].cpu()           # shape [1, H, W]
+        img = (img + 1) / 2          # [0,1]
+        transforms.ToPILImage(mode="L")(img).save(f"sample_{epoch}.png")
